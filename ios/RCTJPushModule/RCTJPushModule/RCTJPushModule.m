@@ -7,9 +7,15 @@
 //
 #import <UIKit/UIKit.h>
 #import "RCTJPushModule.h"
+#if __has_include(<React/RCTEventDispatcher.h>)
+#import <React/RCTEventDispatcher.h>
+#import <React/RCTRootView.h>
+#import <React/RCTBridge.h>
+#else
 #import "RCTEventDispatcher.h"
 #import "RCTRootView.h"
 #import "RCTBridge.h"
+#endif
 #import "RCTJPushActionQueue.h"
 
 @interface RCTJPushModule () {

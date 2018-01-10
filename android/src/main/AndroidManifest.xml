@@ -65,6 +65,7 @@
         <!-- 如：android:process=":remote" -->
         <service
             android:name="cn.jpush.android.service.PushService"
+            android:process=":jpush"
             android:enabled="true"
             android:exported="false">
             <intent-filter>

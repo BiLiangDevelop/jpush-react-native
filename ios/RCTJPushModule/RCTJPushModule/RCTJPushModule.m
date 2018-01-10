@@ -265,6 +265,22 @@ RCT_EXPORT_METHOD( setAlias:(NSString *)alias
   }];
 }
 
+RCT_EXPORT_METHOD(setAliasAndTags:(NSString *)alias tags:(NSArray*)tags callback:(RCTResponseSenderBlock)callback) {
+    
+    NSSet *tagSet;
+    if (tags == NULL)
+        tagSet = [NSSet setWithArray:@[]];
+    else
+        tagSet = [NSSet setWithArray:tags];
+    
+    self.asyCallback = callback;
+    
+    [JPUSHService setTags:tagSet alias:alias fetchCompletionHandle:^(int iResCode, NSSet *iTags, NSString *iAlias) {
+        callback(@[@(iResCode)]);
+    }];
+
+}
+
 /*!
  * @abstract 过滤掉无效的 tags
  *
@@ -445,7 +461,7 @@ RCT_EXPORT_METHOD(clearAllLocalNotifications) {
  *   使用 "+1" 的语义, 来表达需要基于目标用户实际的 badge 值(保存的) +1 来下发通知时带上新的 badge 值;
  */
 RCT_EXPORT_METHOD(setBadge:(NSInteger)value callback:(RCTResponseSenderBlock)callback) {// ->Bool
-  [[UIApplication sharedApplication] setApplicationIconBadgeNumber:value];
+  //[[UIApplication sharedApplication] setApplicationIconBadgeNumber:value];
   NSNumber *badgeNumber = [NSNumber numberWithBool:[JPUSHService setBadge: value]];
   callback(@[badgeNumber]);
 }
@@ -457,7 +473,7 @@ RCT_EXPORT_METHOD(setBadge:(NSInteger)value callback:(RCTResponseSenderBlock)cal
  * 参考 [JPUSHService setBadge:] 说明来理解其作用.
  */
 RCT_EXPORT_METHOD(resetBadge) {
-  [[UIApplication sharedApplication] setApplicationIconBadgeNumber: 0];
+  //[[UIApplication sharedApplication] setApplicationIconBadgeNumber: 0];
   [JPUSHService resetBadge];
 }
 

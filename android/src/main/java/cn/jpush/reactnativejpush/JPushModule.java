@@ -2,6 +2,8 @@ package cn.jpush.reactnativejpush;
 
 import android.app.ActivityManager;
 import android.app.Notification;
+import android.app.NotificationManager;
+import android.app.PendingIntent;
 import android.content.BroadcastReceiver;
 import android.content.ComponentName;
 import android.content.Context;
@@ -182,6 +184,46 @@ public class JPushModule extends ReactContextBaseJavaModule {
         }
     }
 
+    @ReactMethod
+    public void setAliasAndTags(String str, final ReadableArray strArray, final Callback callback) {
+        Set<String> tagSet = new LinkedHashSet<>();
+        if (strArray.size() > 0) {
+            for (int i = 0; i < strArray.size(); i++) {
+                if (!ExampleUtil.isValidTagAndAlias(strArray.getString(i))) {
+                    Logger.toast(mContext, "Invalid tag !");
+                    return;
+                }
+                tagSet.add(strArray.getString(i));
+            }
+        }
+        final String alias = str.trim();
+        Logger.i(TAG, "alias: " + alias + ",tags:" + strArray.toString());
+
+        JPushInterface.setAliasAndTags(getReactApplicationContext(), alias,
+                tagSet, new TagAliasCallback() {
+                    @Override
+                    public void gotResult(int status, String desc, Set<String> set) {
+                        switch (status) {
+                            case 0:
+                                Logger.i(TAG, "Set alias and tags success");
+                                Logger.toast(getReactApplicationContext(), "Set alias and tags success");
+                                callback.invoke(0);
+                                break;
+                            case 6002:
+                                Logger.i(TAG, "Set alias and tags timeout");
+                                Logger.toast(getReactApplicationContext(),
+                                        "set alias and tags timeout, check your network");
+                                callback.invoke("Set alias and tags timeout");
+                                break;
+                            default:
+                                Logger.toast(getReactApplicationContext(), "Error code: " + status);
+                                callback.invoke("Set alias and tags failed. Error code: " + status);
+                        }
+                    }
+                });
+
+    }
+
     /**
      * 设置通知提示方式 - 基础属性
      */
@@ -231,74 +273,152 @@ public class JPushModule extends ReactContextBaseJavaModule {
      */
     public static class JPushReceiver extends BroadcastReceiver {
 
+        private int mDefaultNotifyId = 100000;
+
         public JPushReceiver() {
         }
 
         @Override
-        public void onReceive(Context context, Intent data) {
-            Bundle bundle = data.getExtras();
-            if (JPushInterface.ACTION_MESSAGE_RECEIVED.equals(data.getAction())) {
-                String message = data.getStringExtra(JPushInterface.EXTRA_MESSAGE);
-                String extras = bundle.getString(JPushInterface.EXTRA_EXTRA);
-                WritableMap map = Arguments.createMap();
-                map.putString("message", message);
-                map.putString("extras", extras);
-                Logger.i(TAG, "收到自定义消息: " + message);
-                mRAC.getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter.class)
-                        .emit("receivePushMsg", map);
-            } else if (JPushInterface.ACTION_NOTIFICATION_RECEIVED.equals(data.getAction())) {
-                // 通知内容
-                String alertContent = bundle.getString(JPushInterface.EXTRA_ALERT);
-                // extra 字段的 json 字符串
-                String extras = bundle.getString(JPushInterface.EXTRA_EXTRA);
-                Logger.i(TAG, "收到推送下来的通知: " + alertContent);
-                WritableMap map = Arguments.createMap();
-                map.putString("alertContent", alertContent);
-                map.putString("extras", extras);
-                mRAC.getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter.class)
-                        .emit("receiveNotification", map);
+        public void onReceive(final Context context, Intent data) {
+            try {
+                final Bundle bundle = data.getExtras();
+                if (JPushInterface.ACTION_MESSAGE_RECEIVED.equals(data.getAction()) && bundle != null) {
+                    if (!"XIAOMI".equals(android.os.Build.MANUFACTURER.toUpperCase())) {
+                        String message = data.getStringExtra(JPushInterface.EXTRA_MESSAGE);
+                        String extras = bundle.getString(JPushInterface.EXTRA_EXTRA);
+                        String title = bundle.getString(JPushInterface.EXTRA_TITLE);
+                        Logger.i(TAG, "收到自定义消息: " + message);
 
-                // 这里点击通知跳转到指定的界面可以定制化一下
-            } else if (JPushInterface.ACTION_NOTIFICATION_OPENED.equals(data.getAction())) {
-                try {
-                    Logger.d(TAG, "用户点击打开了通知");
+                        if (mRAC != null) {
+                            WritableMap map = Arguments.createMap();
+                            map.putString("message", message);
+                            map.putString("extras", extras);
+                            map.putString("title", title);
+                            if (data.hasExtra(JPushInterface.EXTRA_NOTIFICATION_ID)) {
+                                map.putInt("notify_id", bundle.getInt(JPushInterface.EXTRA_NOTIFICATION_ID, 0));
+                            }
+                            mRAC.getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter.class)
+                                    .emit("receivePushMsg", map);
+                            return;
+                        }
+
+                        if ("XIAOMI".equals(android.os.Build.MANUFACTURER.toUpperCase())) {
+                            return;
+                        }
+
+                        Log.i(TAG, "onReceive: 后台服务消息");
+
+                        Intent resultIntent = new Intent(context, JPushModule.JPushReceiver.class);
+                        resultIntent.setAction(JPushInterface.ACTION_NOTIFICATION_OPENED);
+
+                        resultIntent.putExtras(bundle);
+
+                        PendingIntent resultPendingIntent = PendingIntent.getBroadcast(
+                                context, mDefaultNotifyId, resultIntent, PendingIntent.FLAG_UPDATE_CURRENT);
+
+                        Notification.Builder nb = new Notification.Builder(context)
+                                .setContentTitle(title)
+                                .setAutoCancel(true)
+                                .setSmallIcon(IdHelper.getDrawable(context, "ic_launcher"))
+                                .setContentIntent(resultPendingIntent)
+                                .setDefaults(Notification.DEFAULT_LIGHTS)
+                                .setContentText(message);
+
+                        NotificationManager notifyManager = (NotificationManager) context.getSystemService(Context.NOTIFICATION_SERVICE);
+                        notifyManager.notify(mDefaultNotifyId, nb.build());
+                    }
+//                    if (mRAC != null) {
+//                        WritableMap map = Arguments.createMap();
+//                        map.putString("message", message);
+//                        map.putString("extras", extras);
+//                        map.putString("title", title);
+//                        if (data.hasExtra(JPushInterface.EXTRA_NOTIFICATION_ID)) {
+//                            map.putInt("notify_id", bundle.getInt(JPushInterface.EXTRA_NOTIFICATION_ID, 0));
+//                        }
+//                        mRAC.getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter.class)
+//                                .emit("receivePushMsg", map);
+//                    } else {
+//                    Intent resultIntent = new Intent(context, JPushReceiver.class);
+//                    resultIntent.setAction(JPushInterface.ACTION_NOTIFICATION_OPENED);
+//                    resultIntent.putExtras(bundle);
+//
+//                    PendingIntent resultPendingIntent = PendingIntent.getBroadcast(
+//                            context, 0, resultIntent, PendingIntent.FLAG_UPDATE_CURRENT);
+//
+//                    Notification.Builder nb = new Notification.Builder(context)
+//                            .setContentTitle(bundle.getString(JPushInterface.EXTRA_TITLE))
+//                            .setAutoCancel(true)
+//                            .setContentIntent(resultPendingIntent)
+//                            .setContentText(message);
+//
+//                    NotificationManager notifyManager = (NotificationManager) context.getSystemService(Context.NOTIFICATION_SERVICE);
+//                    notifyManager.notify(1, nb.build());
+//                    }
+                } else if (JPushInterface.ACTION_NOTIFICATION_RECEIVED.equals(data.getAction())) {
+                    if (mRAC == null)
+                        return;
                     // 通知内容
                     String alertContent = bundle.getString(JPushInterface.EXTRA_ALERT);
                     // extra 字段的 json 字符串
                     String extras = bundle.getString(JPushInterface.EXTRA_EXTRA);
+                    Logger.i(TAG, "收到推送下来的通知: " + alertContent);
                     WritableMap map = Arguments.createMap();
                     map.putString("alertContent", alertContent);
                     map.putString("extras", extras);
                     mRAC.getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter.class)
-                            .emit("openNotification", map);
-                    // judge if application is running in background, opening initial Activity.
-                    // You can change here to open appointed Activity. All you need to do is create
-                    // the appointed Activity, and use JS render the appointed Activity.
-                    // Please reference examples' SecondActivity for detail,
-                    // and JS files are in folder: example/react-native-android
-                    if (isApplicationRunningBackground(context)) {
-                        Intent intent = new Intent();
-                        intent.setClass(context, mModule.mContext.getClass());
-                        Logger.d(TAG, "context.getClass: " + mModule.mContext.getClass());
-                        intent.putExtras(bundle);
-                        intent.setFlags(Intent.FLAG_ACTIVITY_NEW_TASK
-                                | Intent.FLAG_ACTIVITY_CLEAR_TOP);
-                        context.startActivity(intent);
-                        // application running in foreground, do nothing
-                    }
-                } catch (Throwable e) {
-                    e.printStackTrace();
-                }
+                            .emit("receiveNotification", map);
 
-            } else if (JPushInterface.ACTION_REGISTRATION_ID.equals(data.getAction())) {
-                String registrationId = data.getExtras().getString(JPushInterface.EXTRA_REGISTRATION_ID);
-                Logger.d(TAG, "注册成功, registrationId: " + registrationId);
-                mRAC.getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter.class)
-                        .emit("getRegistrationId", registrationId);
+                    // 这里点击通知跳转到指定的界面可以定制化一下
+                } else if (JPushInterface.ACTION_NOTIFICATION_OPENED.equals(data.getAction())) {
+                    try {
+                        Log.d(TAG, "用户点击打开了通知");
+                        // 通知内容
+                        String alertContent = bundle.getString(JPushInterface.EXTRA_ALERT);
+                        // extra 字段的 json 字符串
+                        String extras = bundle.getString(JPushInterface.EXTRA_EXTRA);
+                        String title = bundle.getString(JPushInterface.EXTRA_TITLE);
+                        // judge if application is running in background, opening initial Activity.
+                        // You can change here to open appointed Activity. All you need to do is create
+                        // the appointed Activity, and use JS render the appointed Activity.
+                        // Please reference examples' SecondActivity for detail,
+                        // and JS files are in folder: example/react-native-android
+                        if (isApplicationRunningBackground(context)) {
+//                            if (!"XIAOMI".equals(android.os.Build.MANUFACTURER.toUpperCase())) {
+                            Intent intent = new Intent();
+                            intent.setClassName(context, "com.starcloudapp.MainActivity");
+                            intent.setAction(JPushInterface.ACTION_NOTIFICATION_OPENED);
+                            intent.putExtras(bundle);
+                            context.startActivity(intent);
+//                            }
+                        } else {
+                            if (mRAC != null) {
+                                WritableMap map = Arguments.createMap();
+                                map.putString("alertContent", alertContent);
+                                map.putString("extras", extras);
+                                map.putString("title", title);
+                                mRAC.getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter.class)
+                                        .emit("openNotification", map);
+                            }
+                        }
+                    } catch (Throwable e) {
+                        e.printStackTrace();
+                    }
+
+                } else if (JPushInterface.ACTION_REGISTRATION_ID.equals(data.getAction())) {
+                    if (mRAC == null)
+                        return;
+                    String registrationId = data.getExtras().getString(JPushInterface.EXTRA_REGISTRATION_ID);
+                    Logger.d(TAG, "注册成功, registrationId: " + registrationId);
+                    mRAC.getJSModule(DeviceEventManagerModule.RCTDeviceEventEmitter.class)
+                            .emit("getRegistrationId", registrationId);
+                }
+            } catch (Throwable e) {
+                e.printStackTrace();
             }
         }
 
     }
+
 
     private static boolean isApplicationRunningBackground(final Context context) {
         ActivityManager am = (ActivityManager) context.getSystemService(Context.ACTIVITY_SERVICE);

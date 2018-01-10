@@ -240,6 +240,19 @@ export default class JPush {
 		});
 	}
 
+    /**
+	 * Android & iOS
+     */
+    static setAliasAndTags(alias, tags, success, fail) {
+        JPushModule.setAliasAndTags(alias, tags, (resultCode) => {
+            if (resultCode === 0) {
+                success();
+            } else {
+                fail();
+            }
+        })
+    }
+
 	//  add listener
 	// NativeAppEventEmitter.addListener('networkDidSetup', (token) => {
 	//

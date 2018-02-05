@@ -21,6 +21,8 @@ import com.facebook.react.bridge.ReadableArray;
 import com.facebook.react.bridge.WritableMap;
 import com.facebook.react.modules.core.DeviceEventManagerModule;
 
+import org.json.JSONObject;
+
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
@@ -287,7 +289,20 @@ public class JPushModule extends ReactContextBaseJavaModule {
                         String message = data.getStringExtra(JPushInterface.EXTRA_MESSAGE);
                         String extras = bundle.getString(JPushInterface.EXTRA_EXTRA);
                         String title = bundle.getString(JPushInterface.EXTRA_TITLE);
-                        Logger.i(TAG, "收到自定义消息: " + message);
+                        Logger.i(TAG, "收到自定义消息: message-> " + message + ", extras-> " + extras);
+
+                        ExtraModel extraModel = null;
+                        if (!TextUtils.isEmpty(extras)) {
+                            try {
+                                JSONObject jsonObject = new JSONObject(extras);
+                                if (jsonObject.has("type")) {
+                                    extraModel = new ExtraModel();
+                                    extraModel.setType(jsonObject.getString("type"));
+                                }
+                            } catch (Exception e) {
+                                e.printStackTrace();
+                            }
+                        }
 
                         if (mRAC != null) {
                             WritableMap map = Arguments.createMap();
@@ -308,24 +323,26 @@ public class JPushModule extends ReactContextBaseJavaModule {
 
                         Log.i(TAG, "onReceive: 后台服务消息");
 
-                        Intent resultIntent = new Intent(context, JPushModule.JPushReceiver.class);
-                        resultIntent.setAction(JPushInterface.ACTION_NOTIFICATION_OPENED);
+                        if (extraModel != null && extraModel.showNotification()) {
+                            Intent resultIntent = new Intent(context, JPushModule.JPushReceiver.class);
+                            resultIntent.setAction(JPushInterface.ACTION_NOTIFICATION_OPENED);
 
-                        resultIntent.putExtras(bundle);
+                            resultIntent.putExtras(bundle);
 
-                        PendingIntent resultPendingIntent = PendingIntent.getBroadcast(
-                                context, mDefaultNotifyId, resultIntent, PendingIntent.FLAG_UPDATE_CURRENT);
+                            PendingIntent resultPendingIntent = PendingIntent.getBroadcast(
+                                    context, mDefaultNotifyId, resultIntent, PendingIntent.FLAG_UPDATE_CURRENT);
 
-                        Notification.Builder nb = new Notification.Builder(context)
-                                .setContentTitle(title)
-                                .setAutoCancel(true)
-                                .setSmallIcon(IdHelper.getDrawable(context, "ic_launcher"))
-                                .setContentIntent(resultPendingIntent)
-                                .setDefaults(Notification.DEFAULT_LIGHTS)
-                                .setContentText(message);
+                            Notification.Builder nb = new Notification.Builder(context)
+                                    .setContentTitle(title)
+                                    .setAutoCancel(true)
+                                    .setSmallIcon(IdHelper.getDrawable(context, "ic_launcher"))
+                                    .setContentIntent(resultPendingIntent)
+                                    .setDefaults(Notification.DEFAULT_LIGHTS)
+                                    .setContentText(message);
 
-                        NotificationManager notifyManager = (NotificationManager) context.getSystemService(Context.NOTIFICATION_SERVICE);
-                        notifyManager.notify(mDefaultNotifyId, nb.build());
+                            NotificationManager notifyManager = (NotificationManager) context.getSystemService(Context.NOTIFICATION_SERVICE);
+                            notifyManager.notify(mDefaultNotifyId, nb.build());
+                        }
                     }
 //                    if (mRAC != null) {
 //                        WritableMap map = Arguments.createMap();
